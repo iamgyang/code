@@ -136,59 +136,46 @@ awd_df[, fy_group := factor(
 # make sure I haven't introduced any missing values
 waitifnot(nrow(awd_df)==nrow(na.omit(awd_df)))
 
-# write to CSV
-awd_df <- awd_df %>% split(awd_df$procurementcategory2)
-
-awd_df <- lapply(awd_df, function(x) {
-  x <-
-    x %>%
-    as.data.table() %>% 
-    dcast(., cname ~ fy_group, value.var = 'tot_suppl_contract_value') %>%
-    as.data.frame()
-  x[is.na(x)] <- 0
-  x
-})
-
-# write to google sheets
-write_sheet(awd_df$`Civil Works`, ss = "https://docs.google.com/spreadsheets/d/1_W2crtW5wViEMU4Q8idZXKmvavjiHIwCVF0CNy9zarU/edit?usp=sharing", sheet = 1)
-write_sheet(awd_df$Goods, ss = "https://docs.google.com/spreadsheets/d/1_W2crtW5wViEMU4Q8idZXKmvavjiHIwCVF0CNy9zarU/edit?usp=sharing", sheet = 2)
-write_sheet(awd_df$Other, ss = "https://docs.google.com/spreadsheets/d/1_W2crtW5wViEMU4Q8idZXKmvavjiHIwCVF0CNy9zarU/edit?usp=sharing", sheet = 3)
-write_sheet(awd_df$Overall, ss = "https://docs.google.com/spreadsheets/d/1_W2crtW5wViEMU4Q8idZXKmvavjiHIwCVF0CNy9zarU/edit?usp=sharing", sheet = 4)
-
-
-
-
-
-
-write.csv(awd_df, "awd_df.csv", na = "", row.names = FALSE)
-
+awd_df[,max_tot_suppl_contract_value:=sum(tot_suppl_contract_value, na.rm = T), by = .(procurementcategory2, fy_group)]
 
 # create plot
-plot <- ggplot() +
+plot <- ggplot(data = awd_df,
+    aes(
+      x = fy_group,
+      y = tot_suppl_contract_value, 
+      fill = cname
+      )
+    ) +
   geom_col(
-    data = awd_df,
-    aes(x = fy_group,
-        y = tot_suppl_contract_value, fill = cname),
     position = "fill",
     width = 0.7
   ) +
-  ggrepel::geom_text_repel(
-    data = awd_df,
-    aes(x = fy_group,
-                               y = supplier_country_share,
-                               label = tot_suppl_contract_value
-                               )) + 
+  # geom_text(position = position_fill(vjust = 0.25), size = 3) + 
+  # ggrepel::geom_text_repel(
+  #   position = position_fill(vjust = 0.5),
+  #   box.padding = 0,
+  #   min.segment.length = Inf,
+  #   max.segment.length = 0.2,
+  #   max.overlaps = Inf,
+  #   direction = c("y"),
+  #   size = 3
+  # ) +
+  geom_text(aes(label = paste0("$",
+    signif(max_tot_suppl_contract_value / (10 ^ 9), 2), "B"
+  ), x = fy_group, y = 1.05), check_overlap = TRUE) +
   my_custom_theme +
-  labs(x = "", 
-       y = "", 
-       subtitle = glue("World Bank proportions of total annual project money by supplier")) +
-  facet_wrap( ~ procurementcategory2, ncol = 2, scales = "free") + 
-  scale_color_custom + 
-  guides(fill = guide_legend(reverse=TRUE))
+  labs(
+    x = "",
+    y = "",
+    subtitle = glue("World Bank proportions of total annual project money by contractor country.")
+  ) +
+  facet_wrap(~procurementcategory2, ncol = 2, scales = "free") +
+  scale_color_custom +
+  guides(fill = guide_legend(reverse = TRUE))
 
 setwd(output_dir)
 ggsave(glue("BAR world bank project proportions.pdf"),
-       plot,
+       plot, 
        width = 10,
        height = 7)
 
