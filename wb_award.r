@@ -68,11 +68,20 @@ awd_df[,suppliercountry:=NULL]
 # adjust colors:
 color_ordered <-
   c(
+    '#f0f7ee',
+    '#a8dadc',
+    '#457b9d',
+    '#1d3557',
+    '#335c67',
+    '#fff3b0',
+    "#e09f3e",
+    '#9e2a2b',
+    '#540b0e',
     "#be7098",
     "#64ac48",
-    "#c25abc",
     "#9a963f",
     "#7866ca",
+    '#e63946',
     "#c98746",
     "#6890ce",
     "#ca5237",
@@ -80,104 +89,106 @@ color_ordered <-
     "#cd486e"
   )
 
+scale_color_custom <-
+  list(
+    scale_color_manual(values = color_ordered),
+    scale_fill_manual(values = color_ordered)
+  )
 
-# scale_color_custom <- 
-#   list(
-#     scale_color_manual(values = color_ordered),
-#     scale_fill_manual(values = color_ordered)
-#   )
-# 
-# 
-# # Produce graphs tracking share of US, Japan, China, Germany, UK, France, India, Russia, Canada, Italy in 4/5/6/7 above over time
-# plot <- ggplot() +
-#   geom_line(
-#     data = awd_df[suppliercountrycode_3 %in% c(
-#       name2code(
-#        c('USA',
-#         'Japan',
-#         'China',
-#         'Germany',
-#         'UK',
-#         'France',
-#         'India',
-#         'Russia',
-#         'Canada',
-#         'Italy')
-#       )
-#     )],
-#     aes(x = fiscalyear,
-#         y = supplier_country_share * 100, 
-#         color = procurementcategory2)
-#   ) +
-#   my_custom_theme +
-#   labs(x = "", 
-#        y = "", 
-#        subtitle = "World Bank proportions of total annual project money by supplier") +
-#   scale_color_custom +
-#   facet_wrap( ~ suppliercountryname)
-# 
-# setwd(output_dir)
-# ggsave("world bank project proportions.pdf",
-#        plot,
-#        width = 10,
-#        height = 7)
-
-# For 2021, *2020 and 2001*, the top twenty list of countries in terms of contract wins overall, for civil works, goods, and [everything that isn’t goods and civil works]
 
 awd_df[, rank_overall := rank(-supplier_country_share),
        by = .(fy_group, procurementcategory2)]
 
 # create new country classification:
-awd_df[, c_class:=]
+awd_df[suppliercountrycode_3 == "CHN", cname := "China"]
+awd_df[suppliercountrycode_3 != "CHN" & rank_overall%in%c(1, 2, 3), 
+       cname := suppliercountryname]
+awd_df[suppliercountrycode_3 != "CHN" & 
+         !(rank_overall%in%c(1, 2, 3)), 
+       cname := "Other"]
+awd_df <- awd_df[,.(supplier_country_share = 
+                    sum(supplier_country_share, na.rm = T),
+                    tot_suppl_contract_value = 
+                    sum(tot_suppl_contract_value, na.rm = T)
+                    ),
+                 by = .(cname, fy_group, procurementcategory2)]
+waitifnot(all(abs(awd_df[,.(X=sum(supplier_country_share)), 
+                         by = .(fy_group)]$X-4)<0.01))
 
+# order the countries with China, U.S., and U.K. in front:
+core_countries <- c("United Kingdom", "United States", "China")
+other_countries <- setdiff(unique(awd_df$cname), c(core_countries, "Other"))
+c_order <- c("Other", other_countries, core_countries)
+awd_df[, cname := factor(cname, levels = c_order)]
 
-country_name_order <- unique(awd_df[order(-rank_overall)]$suppliercountryname)
-awd_df[,suppliercountryname:=factor(suppliercountryname, levels = country_name_order)]
+# relevel the fiscal year groups:
+awd_df[, fy_group := factor(
+  fy_group,
+  levels = c(
+    "2001-2004",
+    "2005-2009",
+    "2010-2014",
+    "2015-2019",
+    "2020-2021"
+  )
+)]
 
+# make sure I haven't introduced any missing values
 waitifnot(nrow(awd_df)==nrow(na.omit(awd_df)))
 
-for (i in unique( awd_df$procurementcategory2)) {
-  
+# write to CSV
+awd_df <- awd_df %>% split(awd_df$procurementcategory2)
+
+awd_df <- lapply(awd_df, function(x) {
+  x <-
+    x %>%
+    as.data.table() %>% 
+    dcast(., cname ~ fy_group, value.var = 'tot_suppl_contract_value') %>%
+    as.data.frame()
+  x[is.na(x)] <- 0
+  x
+})
+
+# write to google sheets
+write_sheet(awd_df$`Civil Works`, ss = "https://docs.google.com/spreadsheets/d/1_W2crtW5wViEMU4Q8idZXKmvavjiHIwCVF0CNy9zarU/edit?usp=sharing", sheet = 1)
+write_sheet(awd_df$Goods, ss = "https://docs.google.com/spreadsheets/d/1_W2crtW5wViEMU4Q8idZXKmvavjiHIwCVF0CNy9zarU/edit?usp=sharing", sheet = 2)
+write_sheet(awd_df$Other, ss = "https://docs.google.com/spreadsheets/d/1_W2crtW5wViEMU4Q8idZXKmvavjiHIwCVF0CNy9zarU/edit?usp=sharing", sheet = 3)
+write_sheet(awd_df$Overall, ss = "https://docs.google.com/spreadsheets/d/1_W2crtW5wViEMU4Q8idZXKmvavjiHIwCVF0CNy9zarU/edit?usp=sharing", sheet = 4)
+
+
+
+
+
+
+write.csv(awd_df, "awd_df.csv", na = "", row.names = FALSE)
+
+
+# create plot
 plot <- ggplot() +
   geom_col(
-    data = awd_df[fy_group %in% c(2021, 2001, 2020) & 
-                    rank_overall%in%1:20 & 
-                    procurementcategory2 == i],
-    aes(y = suppliercountryname,
-        x = supplier_country_share * 100),
-    fill = "grey40",
-    position = position_dodge2(preserve = "single")
+    data = awd_df,
+    aes(x = fy_group,
+        y = tot_suppl_contract_value, fill = cname),
+    position = "fill",
+    width = 0.7
   ) +
+  ggrepel::geom_text_repel(
+    data = awd_df,
+    aes(x = fy_group,
+                               y = supplier_country_share,
+                               label = tot_suppl_contract_value
+                               )) + 
   my_custom_theme +
-  theme(
-    axis.text.y = element_text(
-      size = 12,
-      vjust = 0.2,
-      margin = unit(c(
-        t = 0,
-        r = 0,
-        b = 0,
-        l = 0
-      ), "mm"),
-      color = "turquoise4"
-    )
-  )+
   labs(x = "", 
        y = "", 
-       subtitle = glue("{i} World Bank proportions of total annual project money by supplier")) +
-  scale_color_custom +
-  facet_wrap( ~ fy_group, ncol = 3)
+       subtitle = glue("World Bank proportions of total annual project money by supplier")) +
+  facet_wrap( ~ procurementcategory2, ncol = 2, scales = "free") + 
+  scale_color_custom + 
+  guides(fill = guide_legend(reverse=TRUE))
 
 setwd(output_dir)
-ggsave(glue("world bank project proportions BAR {i}.pdf"),
+ggsave(glue("BAR world bank project proportions.pdf"),
        plot,
        width = 10,
        height = 7)
-
-}
-
-write.csv(awd_df, 
-          "wb_contract_awards_ranked_proportions.csv", 
-          na = "", 
-          row.names = FALSE)
 
