@@ -60,11 +60,11 @@ replace procurementcategory2 = "Other" if procurementcategory == "Consultant Ser
 
 // group time periods together
 drop if fiscalyear == 2022
-gen     fy_group = 1 if inlist(fiscalyear, 2001, 2002, 2003, 2004)
-replace fy_group = 2 if inlist(fiscalyear, 2005, 2006, 2007, 2008, 2009)
-replace fy_group = 3 if inlist(fiscalyear, 2010, 2011, 2012, 2013, 2014)
-replace fy_group = 4 if inlist(fiscalyear, 2015, 2016, 2017, 2018, 2019)
-replace fy_group = 5 if inlist(fiscalyear, 2020, 2021)
+gen     fy_group = "2001-2004" if inlist(fiscalyear, 2001, 2002, 2003, 2004)
+replace fy_group = "2005-2009" if inlist(fiscalyear, 2005, 2006, 2007, 2008, 2009)
+replace fy_group = "2010-2014" if inlist(fiscalyear, 2010, 2011, 2012, 2013, 2014)
+replace fy_group = "2015-2019" if inlist(fiscalyear, 2015, 2016, 2017, 2018, 2019)
+replace fy_group = "2020-2021" if inlist(fiscalyear, 2020, 2021)
 assert !mi(fy_group)
 
 // generate an "overall" category for procurement
@@ -103,7 +103,7 @@ foreach i in `procurementcategory2' {
 	gen supplier_country_share = tot_suppl_contract_value / tot_wb_contract_value
 
 	// check that our shares add up to 1.
-	keep supplier_country_share fy_group suppliercountrycode procurementcategory2
+	keep supplier_country_share fy_group suppliercountrycode procurementcategory2 tot_suppl_contract_value tot_wb_contract_value
 	gduplicates drop
 	bys fy_group: gegen check = sum(supplier_country_share)
 	assert abs(check - 1) < 0.0001
