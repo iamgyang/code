@@ -1,6 +1,3 @@
-# Note: I had to do this in R, because otherwise in STATA it would take several 
-# days to complete.
-
 rm(list = ls()) # clear the workspace
 # Options: ----------------------------------------------------------------
 
@@ -70,22 +67,22 @@ color_ordered <-
   c(
     '#f0f7ee',
     '#a8dadc',
-    '#457b9d',
     '#1d3557',
+    "#4aac8b",
     '#335c67',
-    '#fff3b0',
+    '#540b0e',
     "#e09f3e",
     '#9e2a2b',
-    '#540b0e',
     "#be7098",
     "#64ac48",
     "#9a963f",
+    '#457b9d',
     "#7866ca",
     '#e63946',
     "#c98746",
     "#6890ce",
     "#ca5237",
-    "#4aac8b",
+    '#fff3b0',
     "#cd486e"
   )
 
@@ -95,31 +92,8 @@ scale_color_custom <-
     scale_fill_manual(values = color_ordered)
   )
 
-
 awd_df[, rank_overall := rank(-supplier_country_share),
        by = .(fy_group, procurementcategory2)]
-
-# create new country classification:
-awd_df[suppliercountrycode_3 == "CHN", cname := "China"]
-awd_df[suppliercountrycode_3 != "CHN" & rank_overall%in%c(1, 2, 3), 
-       cname := suppliercountryname]
-awd_df[suppliercountrycode_3 != "CHN" & 
-         !(rank_overall%in%c(1, 2, 3)), 
-       cname := "Other"]
-awd_df <- awd_df[,.(supplier_country_share = 
-                    sum(supplier_country_share, na.rm = T),
-                    tot_suppl_contract_value = 
-                    sum(tot_suppl_contract_value, na.rm = T)
-                    ),
-                 by = .(cname, fy_group, procurementcategory2)]
-waitifnot(all(abs(awd_df[,.(X=sum(supplier_country_share)), 
-                         by = .(fy_group)]$X-4)<0.01))
-
-# order the countries with China, U.S., and U.K. in front:
-core_countries <- c("United Kingdom", "United States", "China")
-other_countries <- setdiff(unique(awd_df$cname), c(core_countries, "Other"))
-c_order <- c("Other", other_countries, core_countries)
-awd_df[, cname := factor(cname, levels = c_order)]
 
 # relevel the fiscal year groups:
 awd_df[, fy_group := factor(
@@ -133,12 +107,35 @@ awd_df[, fy_group := factor(
   )
 )]
 
+# Civil works & overall
+awd_df[suppliercountrycode_3 %in% c("CHN", "JPN", "USA", "GBR", "IND"), cname := suppliercountryname]
+awd_df[!(suppliercountrycode_3 %in% c("CHN", "JPN", "USA", "GBR", "IND")), cname := "Other"]
+awd_df <- awd_df[,.(supplier_country_share = 
+                  sum(supplier_country_share, na.rm = T),
+                  tot_suppl_contract_value = 
+                  sum(tot_suppl_contract_value, na.rm = T)
+                  ),
+              by = .(cname, fy_group, procurementcategory2)]
+
+# order the countries with China, U.S., and U.K. in front:
+core_countries <- c("United Kingdom", "United States", "China")
+other_countries <- setdiff(unique(awd_df$cname), c(core_countries, "Other"))
+c_order <- c("Other", other_countries, core_countries)
+awd_df[, cname := factor(cname, levels = c_order)]
+
+# For 'civil works' and 'overall', create country classification based on top 3;
+# for goods and other, create for top 5.
+
+waitifnot(all(abs(awd_df[,.(X=sum(supplier_country_share)), 
+                      by = .(fy_group)]$X-4)<0.01))
+
 # make sure I haven't introduced any missing values
 waitifnot(nrow(awd_df)==nrow(na.omit(awd_df)))
+awd_df[, max_tot_suppl_contract_value:=
+  sum(tot_suppl_contract_value, na.rm = T), 
+by = .(procurementcategory2, fy_group)]
 
-awd_df[,max_tot_suppl_contract_value:=sum(tot_suppl_contract_value, na.rm = T), by = .(procurementcategory2, fy_group)]
-
-# create plot
+# create bar plot
 plot <- ggplot(data = awd_df,
     aes(
       x = fy_group,
@@ -150,32 +147,27 @@ plot <- ggplot(data = awd_df,
     position = "fill",
     width = 0.7
   ) +
-  # geom_text(position = position_fill(vjust = 0.25), size = 3) + 
-  # ggrepel::geom_text_repel(
-  #   position = position_fill(vjust = 0.5),
-  #   box.padding = 0,
-  #   min.segment.length = Inf,
-  #   max.segment.length = 0.2,
-  #   max.overlaps = Inf,
-  #   direction = c("y"),
-  #   size = 3
-  # ) +
   geom_text(aes(label = paste0("$",
     signif(max_tot_suppl_contract_value / (10 ^ 9), 2), "B"
   ), x = fy_group, y = 1.05), check_overlap = TRUE) +
   my_custom_theme +
+  theme(axis.ticks.x = element_blank()) + 
   labs(
     x = "",
     y = "",
-    subtitle = glue("World Bank proportions of total annual project money by contractor country.")
+    subtitle = "World Bank Financed Contracts Awarded to Non-Recipient Contractors by Country of Contractor"
   ) +
   facet_wrap(~procurementcategory2, ncol = 2, scales = "free") +
   scale_color_custom +
-  guides(fill = guide_legend(reverse = TRUE))
+  guides(fill = guide_legend(reverse = TRUE))+
+  scale_y_continuous(expand = expansion(mult = c(0, .1)), breaks = seq(0, 1, 0.25))
 
 setwd(output_dir)
 ggsave(glue("BAR world bank project proportions.pdf"),
        plot, 
        width = 10,
        height = 7)
-
+ggsave(glue("BAR world bank project proportions.png"),
+       plot, 
+       width = 10,
+       height = 7)
